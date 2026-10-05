@@ -4,7 +4,7 @@ Small, dependency-light Bash utilities for safely backing up, configuring, and r
 
 The first release targets **Microsoft Entra ID (OIDC)** on OpenMetadata deployments managed with Docker Compose.
 
-> Status: pre-release. The current foundation is being tested against OpenMetadata 2.0.3 before v0.1.0 is published.
+> Status: pre-release. The current foundation has been functionally validated against OpenMetadata 2.0.3 and is undergoing final installation/documentation testing before v0.1.0 is published.
 
 ## Why this exists
 
@@ -17,6 +17,8 @@ This toolkit makes that flow repeatable without requiring Python, jq, or a YAML 
 - `backup-security-config.sh` — exports the current persisted authentication and authorization configuration to a timestamped, permission-restricted backup.
 - `configure-entra.sh` — performs preflight checks, creates a rollback backup, prompts for Entra settings, applies the OIDC configuration, restarts OpenMetadata, and verifies the auth endpoint.
 - `restore-security-config.sh` — validates and restores a previously exported security configuration, restarts OpenMetadata, and reports the active provider.
+- `install.sh` — installs the toolkit for the current user and configures the `om-auth` command.
+- `om-auth` — friendly command wrapper for backup, Entra configuration, restore, logs, and configuration.
 
 ## Runtime requirements
 
@@ -39,41 +41,64 @@ The OpenMetadata container must include:
 
 ## Quick start
 
-Clone the repository onto the OpenMetadata host and enter the directory containing your OpenMetadata Compose file.
-
-You can either copy the three scripts there or invoke them by path.
-
-Make them executable:
+For the easiest installation, run the installer from a cloned checkout:
 
 ```bash
-chmod +x backup-security-config.sh configure-entra.sh restore-security-config.sh
+./install.sh
 ```
 
-Create a standalone backup:
+The installer:
+
+- installs a single `om-auth` command in `~/.local/bin`
+- installs the toolkit scripts under `~/.local/share/openmetadata-auth-toolkit`
+- auto-detects common OpenMetadata Compose locations
+- stores the selected Compose path in `~/.config/openmetadata-auth-toolkit/config`
+- keeps backups and logs in the toolkit data directory with restrictive permissions
+
+Then use:
 
 ```bash
-./backup-security-config.sh
+om-auth backup
+om-auth entra
+om-auth backups
+om-auth logs
 ```
 
-Configure Microsoft Entra ID:
+To restore a backup:
 
 ```bash
-./configure-entra.sh
+om-auth restore ~/.local/share/openmetadata-auth-toolkit/backups/security-config-YYYYMMDD-HHMMSS.yaml
 ```
 
-The configuration script asks for:
-
-- the public HTTPS OpenMetadata URL
-- Microsoft Entra tenant ID
-- Microsoft Entra application (client) ID
-- Microsoft Entra client secret **value**
-
-The secret is read without terminal echo and is not written to the backup directory.
-
-If you need to roll back:
+If the Compose file is not auto-detected:
 
 ```bash
-./restore-security-config.sh backups/security-config-YYYYMMDD-HHMMSS.yaml
+om-auth set-compose /path/to/docker-compose.yml
+```
+
+Show the current toolkit configuration:
+
+```bash
+om-auth config
+```
+
+Uninstall the command and installed scripts while preserving backups and logs:
+
+```bash
+om-auth uninstall
+```
+
+Once the repository is public on `main`, the installer is also designed for a one-line install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | bash
+```
+
+If automatic Compose detection is not possible in a piped install, pass it explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | \
+  bash -s -- --compose-file /path/to/docker-compose.yml
 ```
 
 ## Toolkit and OpenMetadata in separate directories
@@ -138,6 +163,7 @@ OpenMetadata Compose service: openmetadata-server
 OpenMetadata operations tool: /opt/openmetadata/bootstrap/openmetadata-ops.sh
 Local OpenMetadata URL: http://127.0.0.1:8585
 Backup directory: ./backups
+Log directory: ./logs
 ```
 
 Override them when needed:
@@ -169,6 +195,7 @@ The toolkit is intentionally conservative:
 - verifies `provider=azure`, confidential client mode, and callback URL
 - prints clear errors and non-zero exit codes on failure
 - stores backups with restrictive permissions
+- saves suppressed Docker/OpenMetadata command output to permission-restricted per-run log files
 
 Exit codes:
 
