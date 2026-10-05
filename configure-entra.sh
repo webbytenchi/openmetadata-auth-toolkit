@@ -11,11 +11,22 @@ SERVICE="${OM_SERVICE:-openmetadata-server}"
 OPS_PATH="${OM_OPS_PATH:-/opt/openmetadata/bootstrap/openmetadata-ops.sh}"
 LOCAL_URL="${OM_LOCAL_URL:-http://127.0.0.1:8585}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE=""
 
 die() { local code="$1"; shift; printf 'ERROR: %s\n' "$*" >&2; exit "$code"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "Required command '$1' was not found."; }
 uuid_ok() { [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]]; }
 yaml_escape() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
+
+show_failure() {
+  local code="$1" message="$2"
+  printf 'ERROR: %s\n' "$message" >&2
+  if [[ -n "$LOG_FILE" && -s "$LOG_FILE" ]]; then
+    printf '\nDetails:\n' >&2
+    cat "$LOG_FILE" >&2
+  fi
+  exit "$code"
+}
 
 detect_compose() {
   if [[ -n "${COMPOSE_FILE:-}" ]]; then
@@ -36,20 +47,20 @@ detect_compose() {
 
 preflight() {
   local c
-  for c in sudo docker grep awk curl mktemp chmod rm sleep dirname seq; do need "$c"; done
+  for c in sudo docker grep awk curl mktemp chmod rm sleep dirname seq cat; do need "$c"; done
 
-  sudo -v || die "$EXIT_MISSING_DEP" "sudo authentication failed."
+  sudo -v >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "sudo authentication failed."
   docker compose version >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "'docker compose' is unavailable."
 
   detect_compose
 
-  sudo docker compose -f "$COMPOSE_FILE" config --services | grep -Fxq "$SERVICE" \
+  sudo docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null | grep -Fxq "$SERVICE" \
     || die "$EXIT_INVALID_INPUT" "Compose service '$SERVICE' was not found in $COMPOSE_FILE."
 
-  sudo docker compose -f "$COMPOSE_FILE" ps --services --status running | grep -Fxq "$SERVICE" \
+  sudo docker compose -f "$COMPOSE_FILE" ps --services --status running 2>/dev/null | grep -Fxq "$SERVICE" \
     || die "$EXIT_INVALID_INPUT" "Compose service '$SERVICE' is not running."
 
-  sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" test -x "$OPS_PATH" \
+  sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" test -x "$OPS_PATH" >/dev/null 2>&1 \
     || die "$EXIT_INVALID_INPUT" "OpenMetadata operations tool not found at $OPS_PATH."
 
   [[ -x "$SCRIPT_DIR/backup-security-config.sh" ]] \
@@ -67,9 +78,11 @@ wait_for_health() {
   return 1
 }
 
+printf '[1/6] Preflight checks... '
 preflight
+printf 'OK\n'
 
-printf 'OpenMetadata Microsoft Entra ID configuration\n'
+printf '\nOpenMetadata Microsoft Entra ID configuration\n'
 printf '%s\n' '---------------------------------------------'
 
 read -r -p "Public OpenMetadata URL (for example https://metadata.example.com): " PUBLIC_URL
@@ -93,21 +106,23 @@ AUTHORITY="https://login.microsoftonline.com/$TENANT_ID"
 JWKS_URL="https://login.microsoftonline.com/$TENANT_ID/discovery/v2.0/keys"
 SELF_JWKS="$PUBLIC_URL/api/v1/system/config/jwks"
 
-printf 'Checking Entra discovery endpoint...\n'
-curl -fsS --max-time 10 "$DISCOVERY_URI" >/dev/null \
-  || die "$EXIT_VERIFY" "Could not reach the Entra OpenID discovery endpoint."
+printf '[2/6] Checking Entra discovery endpoint... '
+curl -fsS --max-time 10 "$DISCOVERY_URI" >/dev/null 2>&1 \
+  || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Could not reach the Entra OpenID discovery endpoint."; }
+printf 'OK\n'
 
-printf 'Creating a rollback backup before making changes...\n'
+printf '[3/6] Creating rollback backup... '
 backup="$(COMPOSE_FILE="$COMPOSE_FILE" OM_SERVICE="$SERVICE" OM_OPS_PATH="$OPS_PATH" \
-  "$SCRIPT_DIR/backup-security-config.sh" --quiet)" \
-  || die "$EXIT_APPLY" "Could not create the required rollback backup."
-
-[[ -f "$backup" ]] || die "$EXIT_VERIFY" "Backup script reported a path that does not exist: $backup"
+  "$SCRIPT_DIR/backup-security-config.sh" --quiet 2>/dev/null)" \
+  || { printf 'FAILED\n'; die "$EXIT_APPLY" "Could not create the required rollback backup."; }
+[[ -f "$backup" ]] || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Backup script reported a path that does not exist: $backup"; }
+printf 'OK\n'
 
 tmp="$(mktemp)"
 secret_tmp="$(mktemp)"
-trap 'rm -f "$tmp" "$secret_tmp"' EXIT
-chmod 600 "$tmp" "$secret_tmp"
+LOG_FILE="$(mktemp)"
+trap 'rm -f "$tmp" "$secret_tmp" "$LOG_FILE"' EXIT
+chmod 600 "$tmp" "$secret_tmp" "$LOG_FILE"
 printf '%s' "$(yaml_escape "$CLIENT_SECRET")" > "$secret_tmp"
 unset CLIENT_SECRET
 
@@ -198,31 +213,46 @@ read -r -p "Type CONFIRM to update OpenMetadata authentication: " answer
 
 remote="/tmp/security-config-entra-$$.yaml"
 
-sudo docker compose -f "$COMPOSE_FILE" cp "$tmp" "$SERVICE:$remote" >/dev/null \
-  || die "$EXIT_APPLY" "Could not copy generated config into the OpenMetadata container."
+: >"$LOG_FILE"
+printf '[4/6] Applying Entra configuration... '
+if ! sudo docker compose -f "$COMPOSE_FILE" cp "$tmp" "$SERVICE:$remote" >"$LOG_FILE" 2>&1; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_APPLY" "Could not copy generated config into the OpenMetadata container."
+fi
 
-printf 'CONFIRM\n' | sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
-  "$OPS_PATH" update-security-config --config-file "$remote" \
-  || die "$EXIT_APPLY" "OpenMetadata rejected the generated Entra configuration."
+if ! { printf 'CONFIRM\n' | sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
+  "$OPS_PATH" update-security-config --config-file "$remote"; } >>"$LOG_FILE" 2>&1; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_APPLY" "OpenMetadata rejected the generated Entra configuration."
+fi
+printf 'OK\n'
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
-sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >/dev/null \
-  || die "$EXIT_APPLY" "Failed to restart '$SERVICE'."
+: >"$LOG_FILE"
+printf '[5/6] Restarting OpenMetadata... '
+if ! sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >"$LOG_FILE" 2>&1; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_APPLY" "Failed to restart '$SERVICE'."
+fi
+printf 'OK\n'
 
-printf 'Waiting for OpenMetadata to become healthy...\n'
-wait_for_health \
-  || die "$EXIT_VERIFY" "OpenMetadata did not become healthy within 90 seconds. Restore with: ./restore-security-config.sh '$backup'"
+printf '[6/6] Verifying authentication... '
+if ! wait_for_health; then
+  printf 'FAILED\n'
+  die "$EXIT_VERIFY" "OpenMetadata did not become healthy within 90 seconds. Restore with: ./restore-security-config.sh '$backup'"
+fi
 
 auth="$(curl -fsS --max-time 10 "$LOCAL_URL/api/v1/system/config/auth")" \
-  || die "$EXIT_VERIFY" "Could not read the auth endpoint after restart. Restore with: ./restore-security-config.sh '$backup'"
+  || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Could not read the auth endpoint after restart. Restore with: ./restore-security-config.sh '$backup'"; }
 
 printf '%s' "$auth" | grep -Fq '"provider":"azure"' \
-  || die "$EXIT_VERIFY" "Auth endpoint does not report provider=azure. Restore with: ./restore-security-config.sh '$backup'"
+  || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Auth endpoint does not report provider=azure. Restore with: ./restore-security-config.sh '$backup'"; }
 printf '%s' "$auth" | grep -Fq '"clientType":"confidential"' \
-  || die "$EXIT_VERIFY" "Auth endpoint does not report clientType=confidential."
+  || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Auth endpoint does not report clientType=confidential."; }
 printf '%s' "$auth" | grep -Fq "\"callbackUrl\":\"$CALLBACK_URL\"" \
-  || die "$EXIT_VERIFY" "Auth endpoint callback URL does not match $CALLBACK_URL."
+  || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Auth endpoint callback URL does not match $CALLBACK_URL."; }
+printf 'OK\n'
 
 printf '\nSUCCESS: Microsoft Entra ID authentication is configured.\n'
 printf 'Rollback backup: %s\n' "$backup"
