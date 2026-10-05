@@ -1,0 +1,6 @@
+# Security configuration exports can contain secrets.
+backups/
+security-config-*.yaml
+*.local
+*.log
+logs/
