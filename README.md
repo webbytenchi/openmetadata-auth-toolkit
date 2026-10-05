@@ -76,6 +76,49 @@ If you need to roll back:
 ./restore-security-config.sh backups/security-config-YYYYMMDD-HHMMSS.yaml
 ```
 
+## Toolkit and OpenMetadata in separate directories
+
+A common layout is to keep the toolkit repository separate from the OpenMetadata Docker deployment, for example:
+
+```text
+~/openmetadata-auth-toolkit/
+~/openmetadata-docker/
+```
+
+Clone the toolkit:
+
+```bash
+cd ~
+git clone https://github.com/webbytenchi/openmetadata-auth-toolkit.git
+cd openmetadata-auth-toolkit
+chmod +x backup-security-config.sh configure-entra.sh restore-security-config.sh
+```
+
+During pre-release testing, switch to the current test branch:
+
+```bash
+git switch emma/v0.1.0-foundation
+```
+
+Then point the toolkit at the OpenMetadata Compose file explicitly:
+
+```bash
+COMPOSE_FILE=~/openmetadata-docker/docker-compose-postgres.yml \
+./backup-security-config.sh
+```
+
+The same override can be used with the configuration and restore scripts:
+
+```bash
+COMPOSE_FILE=~/openmetadata-docker/docker-compose-postgres.yml \
+./configure-entra.sh
+
+COMPOSE_FILE=~/openmetadata-docker/docker-compose-postgres.yml \
+./restore-security-config.sh backups/security-config-YYYYMMDD-HHMMSS.yaml
+```
+
+Once v0.1.0 is released on `main`, the pre-release branch switch above will no longer be needed.
+
 ## Defaults and overrides
 
 The scripts auto-detect these common Compose filenames:
