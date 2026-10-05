@@ -45,7 +45,7 @@ detect_compose() {
 
 preflight() {
   local c
-  for c in sudo docker grep awk curl mktemp chmod rm sleep dirname seq cat; do need "$c"; done
+  for c in sudo docker grep awk curl mktemp chmod rm sleep dirname seq cat date mkdir; do need "$c"; done
 
   sudo -v >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "sudo authentication failed."
   docker compose version >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "'docker compose' is unavailable."
