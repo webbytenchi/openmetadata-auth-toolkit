@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONFIG_FILE="${OM_AUTH_CONFIG_FILE:-$CONFIG_HOME/openmetadata-auth-toolkit/config}"
+INSTALL_DIR="${OM_AUTH_INSTALL_DIR:-$DATA_HOME/openmetadata-auth-toolkit}"
+
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONFIG_FILE"
+  INSTALL_DIR="${OM_AUTH_INSTALL_DIR:-$INSTALL_DIR}"
+fi
+
+BACKUP_DIR="${OM_BACKUP_DIR:-$INSTALL_DIR/backups}"
+LOG_DIR="${OM_LOG_DIR:-$INSTALL_DIR/logs}"
+
+usage() {
+  cat <<'EOF'
+OpenMetadata Auth Toolkit
+
+Usage:
+  om-auth backup
+  om-auth entra
+  om-auth restore <backup.yaml>
+  om-auth backups
+  om-auth logs
+  om-auth set-compose <compose.yml>
+  om-auth config
+  om-auth help
+EOF
+}
+
+need_compose() {
+  [[ -n "${COMPOSE_FILE:-}" ]] || {
+    printf 'ERROR: OpenMetadata Compose file is not configured.\n' >&2
+    printf 'Run: om-auth set-compose /path/to/docker-compose.yml\n' >&2
+    exit 3
+  }
+  [[ -f "$COMPOSE_FILE" ]] || {
+    printf 'ERROR: Configured Compose file does not exist: %s\n' "$COMPOSE_FILE" >&2
+    printf 'Run: om-auth set-compose /path/to/docker-compose.yml\n' >&2
+    exit 3
+  }
+}
+
+save_compose() {
+  local path="$1"
+  [[ -f "$path" ]] || { printf 'ERROR: Compose file not found: %s\n' "$path" >&2; exit 3; }
+  path="$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  chmod 700 "$(dirname "$CONFIG_FILE")"
+  {
+    printf '# OpenMetadata Auth Toolkit\n'
+    printf 'COMPOSE_FILE=%q\n' "$path"
+    printf 'OM_AUTH_INSTALL_DIR=%q\n' "$INSTALL_DIR"
+  } > "$CONFIG_FILE"
+  chmod 600 "$CONFIG_FILE"
+  printf 'Compose file saved: %s\n' "$path"
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  backup)
+    need_compose
+    COMPOSE_FILE="$COMPOSE_FILE" OM_BACKUP_DIR="$BACKUP_DIR" OM_LOG_DIR="$LOG_DIR"       "$INSTALL_DIR/backup-security-config.sh" "$@"
+    ;;
+  entra|configure-entra)
+    need_compose
+    COMPOSE_FILE="$COMPOSE_FILE" OM_BACKUP_DIR="$BACKUP_DIR" OM_LOG_DIR="$LOG_DIR"       "$INSTALL_DIR/configure-entra.sh" "$@"
+    ;;
+  restore)
+    need_compose
+    [[ $# -eq 1 ]] || { printf 'Usage: om-auth restore <backup.yaml>\n' >&2; exit 3; }
+    COMPOSE_FILE="$COMPOSE_FILE" OM_BACKUP_DIR="$BACKUP_DIR" OM_LOG_DIR="$LOG_DIR"       "$INSTALL_DIR/restore-security-config.sh" "$1"
+    ;;
+  backups)
+    mkdir -p "$BACKUP_DIR"
+    ls -lh "$BACKUP_DIR"
+    ;;
+  logs)
+    mkdir -p "$LOG_DIR"
+    ls -lh "$LOG_DIR"
+    ;;
+  set-compose)
+    [[ $# -eq 1 ]] || { printf 'Usage: om-auth set-compose <compose.yml>\n' >&2; exit 3; }
+    save_compose "$1"
+    ;;
+  config)
+    printf 'Compose: %s\n' "${COMPOSE_FILE:-not configured}"
+    printf 'Install: %s\n' "$INSTALL_DIR"
+    printf 'Backups: %s\n' "$BACKUP_DIR"
+    printf 'Logs: %s\n' "$LOG_DIR"
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    printf 'ERROR: Unknown command: %s\n\n' "$cmd" >&2
+    usage >&2
+    exit 3
+    ;;
+esac
