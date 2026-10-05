@@ -6,6 +6,50 @@ The first release targets **Microsoft Entra ID (OIDC)** on OpenMetadata deployme
 
 > **v0.1.0** has been functionally validated against OpenMetadata 2.0.3 with Docker Compose, including backup, Microsoft Entra ID configuration, real browser sign-in, rollback, clean-snapshot installation, and the installed `om-auth` workflow.
 
+
+## Install and get started
+
+Clone the repository and run the installer:
+
+```bash
+git clone https://github.com/webbytenchi/openmetadata-auth-toolkit.git
+cd openmetadata-auth-toolkit
+./install.sh
+```
+
+If the installer tells you it added `~/.local/bin` to your shell PATH, reload the current shell once:
+
+```bash
+source ~/.bashrc
+```
+
+Verify the detected OpenMetadata deployment:
+
+```bash
+om-auth config
+```
+
+Create your first security backup:
+
+```bash
+om-auth backup
+```
+
+Configure Microsoft Entra ID when ready:
+
+```bash
+om-auth entra
+```
+
+To roll back later, list the saved backups and restore one by filename:
+
+```bash
+om-auth backups
+om-auth restore security-config-YYYYMMDD-HHMMSS.yaml
+```
+
+For prerequisites, advanced installation options, manual script usage, and security details, continue below or see the [Installation guide](docs/installation.md) and [Command reference](docs/command-reference.md).
+
 ## Why this exists
 
 Changing OpenMetadata authentication involves several easy-to-miss steps: exporting the persisted security configuration, preserving the authorization block, supplying the correct OIDC values, restarting the service, verifying the active provider, and keeping a working rollback path.
@@ -46,13 +90,7 @@ The OpenMetadata container must include:
 /opt/openmetadata/bootstrap/openmetadata-ops.sh
 ```
 
-## Quick start
-
-For the easiest installation, run the installer from a cloned checkout:
-
-```bash
-./install.sh
-```
+## Installed command overview
 
 The installer:
 
