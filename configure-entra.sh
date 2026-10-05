@@ -11,6 +11,7 @@ SERVICE="${OM_SERVICE:-openmetadata-server}"
 OPS_PATH="${OM_OPS_PATH:-/opt/openmetadata/bootstrap/openmetadata-ops.sh}"
 LOCAL_URL="${OM_LOCAL_URL:-http://127.0.0.1:8585}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="${OM_LOG_DIR:-./logs}"
 LOG_FILE=""
 
 die() { local code="$1"; shift; printf 'ERROR: %s\n' "$*" >&2; exit "$code"; }
@@ -21,10 +22,7 @@ yaml_escape() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; printf '%s' 
 show_failure() {
   local code="$1" message="$2"
   printf 'ERROR: %s\n' "$message" >&2
-  if [[ -n "$LOG_FILE" && -s "$LOG_FILE" ]]; then
-    printf '\nDetails:\n' >&2
-    cat "$LOG_FILE" >&2
-  fi
+  [[ -n "$LOG_FILE" ]] && printf 'Log: %s\n' "$LOG_FILE" >&2
   exit "$code"
 }
 
@@ -82,6 +80,13 @@ printf '[1/6] Preflight checks... '
 preflight
 printf 'OK\n'
 
+mkdir -p "$LOG_DIR"
+chmod 700 "$LOG_DIR"
+run_stamp="$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="${LOG_DIR%/}/configure-entra-${run_stamp}.log"
+: >"$LOG_FILE"
+chmod 600 "$LOG_FILE"
+
 printf '\nOpenMetadata Microsoft Entra ID configuration\n'
 printf '%s\n' '---------------------------------------------'
 
@@ -112,17 +117,16 @@ curl -fsS --max-time 10 "$DISCOVERY_URI" >/dev/null 2>&1 \
 printf 'OK\n'
 
 printf '[3/6] Creating rollback backup... '
-backup="$(COMPOSE_FILE="$COMPOSE_FILE" OM_SERVICE="$SERVICE" OM_OPS_PATH="$OPS_PATH" \
-  "$SCRIPT_DIR/backup-security-config.sh" --quiet 2>/dev/null)" \
+backup="$(COMPOSE_FILE="$COMPOSE_FILE" OM_SERVICE="$SERVICE" OM_OPS_PATH="$OPS_PATH" OM_LOG_DIR="$LOG_DIR" \
+  "$SCRIPT_DIR/backup-security-config.sh" --quiet 2>>"$LOG_FILE")" \
   || { printf 'FAILED\n'; die "$EXIT_APPLY" "Could not create the required rollback backup."; }
 [[ -f "$backup" ]] || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Backup script reported a path that does not exist: $backup"; }
 printf 'OK\n'
 
 tmp="$(mktemp)"
 secret_tmp="$(mktemp)"
-LOG_FILE="$(mktemp)"
-trap 'rm -f "$tmp" "$secret_tmp" "$LOG_FILE"' EXIT
-chmod 600 "$tmp" "$secret_tmp" "$LOG_FILE"
+trap 'rm -f "$tmp" "$secret_tmp"' EXIT
+chmod 600 "$tmp" "$secret_tmp"
 printf '%s' "$(yaml_escape "$CLIENT_SECRET")" > "$secret_tmp"
 unset CLIENT_SECRET
 
@@ -213,13 +217,14 @@ read -r -p "Type CONFIRM to update OpenMetadata authentication: " answer
 
 remote="/tmp/security-config-entra-$$.yaml"
 
-: >"$LOG_FILE"
+printf '%s\n' '=== Copy generated Entra configuration ===' >>"$LOG_FILE"
 printf '[4/6] Applying Entra configuration... '
-if ! sudo docker compose -f "$COMPOSE_FILE" cp "$tmp" "$SERVICE:$remote" >"$LOG_FILE" 2>&1; then
+if ! sudo docker compose -f "$COMPOSE_FILE" cp "$tmp" "$SERVICE:$remote" >>"$LOG_FILE" 2>&1; then
   printf 'FAILED\n'
   show_failure "$EXIT_APPLY" "Could not copy generated config into the OpenMetadata container."
 fi
 
+printf '%s\n' '=== Apply Entra security configuration ===' >>"$LOG_FILE"
 if ! { printf 'CONFIRM\n' | sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
   "$OPS_PATH" update-security-config --config-file "$remote"; } >>"$LOG_FILE" 2>&1; then
   printf 'FAILED\n'
@@ -229,9 +234,9 @@ printf 'OK\n'
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
-: >"$LOG_FILE"
+printf '%s\n' '=== Restart OpenMetadata ===' >>"$LOG_FILE"
 printf '[5/6] Restarting OpenMetadata... '
-if ! sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >"$LOG_FILE" 2>&1; then
+if ! sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >>"$LOG_FILE" 2>&1; then
   printf 'FAILED\n'
   show_failure "$EXIT_APPLY" "Failed to restart '$SERVICE'."
 fi
@@ -256,6 +261,7 @@ printf 'OK\n'
 
 printf '\nSUCCESS: Microsoft Entra ID authentication is configured.\n'
 printf 'Rollback backup: %s\n' "$backup"
+printf 'Log: %s\n' "$LOG_FILE"
 
 if printf '%s' "$auth" | grep -Fq '"forceSecureSessionCookie":false'; then
   printf 'WARNING: OpenMetadata reports forceSecureSessionCookie=false even though the generated YAML requested true.\n' >&2
