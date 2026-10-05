@@ -18,7 +18,13 @@ This toolkit makes that flow repeatable without requiring Python, jq, or a YAML 
 - `configure-entra.sh` — performs preflight checks, creates a rollback backup, prompts for Entra settings, applies the OIDC configuration, restarts OpenMetadata, and verifies the auth endpoint.
 - `restore-security-config.sh` — validates and restores a previously exported security configuration, restarts OpenMetadata, and reports the active provider.
 - `install.sh` — installs the toolkit for the current user and configures the `om-auth` command.
-- `om-auth` — friendly command wrapper for backup, Entra configuration, restore, logs, and configuration.
+- `om-auth` — friendly command wrapper for backup, Entra configuration, restore, logs, configuration, Compose selection, and uninstall.
+
+## Documentation
+
+- [Installation guide](docs/installation.md) — prerequisites, installer behavior, PATH setup, Compose auto-detection, installed locations, overrides, and uninstall.
+- [Command reference](docs/command-reference.md) — complete `om-auth` command behavior and examples.
+- [Microsoft Entra ID setup](docs/entra-setup.md) — app registration, redirect URI, client secret, generated OIDC settings, and troubleshooting.
 
 ## Runtime requirements
 
@@ -54,6 +60,7 @@ The installer:
 - auto-detects common OpenMetadata Compose locations
 - stores the selected Compose path in `~/.config/openmetadata-auth-toolkit/config`
 - keeps backups and logs in the toolkit data directory with restrictive permissions
+- adds `~/.local/bin` to Bash/Zsh PATH when needed; reload the current shell once if the installer tells you to
 
 Then use:
 
@@ -64,17 +71,34 @@ om-auth backups
 om-auth logs
 ```
 
+Common commands:
+
+| Command | Purpose |
+| --- | --- |
+| `om-auth backup` | Export and verify the current persisted security configuration |
+| `om-auth entra` | Configure Microsoft Entra ID with an automatic rollback backup |
+| `om-auth restore <backup.yaml>` | Restore a previous authentication/authorization backup |
+| `om-auth backups` | List saved backups |
+| `om-auth logs` | List saved per-run logs |
+| `om-auth config` | Show Compose, install, backup, and log paths |
+| `om-auth set-compose <compose.yml>` | Save a Compose path when auto-detection is unavailable or needs changing |
+| `om-auth uninstall` | Remove installed command/scripts/config while preserving backups and logs |
+| `om-auth help` | Show command usage |
+
+
 To restore a backup:
 
 ```bash
 om-auth restore ~/.local/share/openmetadata-auth-toolkit/backups/security-config-YYYYMMDD-HHMMSS.yaml
 ```
 
-If the Compose file is not auto-detected:
+If the Compose file is not auto-detected, use the fallback `set-compose` command once:
 
 ```bash
 om-auth set-compose /path/to/docker-compose.yml
 ```
+
+You normally do not need `set-compose`. It is only for a Compose file that was not auto-detected, was moved, or when you intentionally want to point the toolkit at another OpenMetadata deployment.
 
 Show the current toolkit configuration:
 
@@ -156,7 +180,7 @@ docker-compose.yml
 docker-compose.yaml
 ```
 
-Defaults:
+Direct-script defaults:
 
 ```text
 OpenMetadata Compose service: openmetadata-server
@@ -164,6 +188,13 @@ OpenMetadata operations tool: /opt/openmetadata/bootstrap/openmetadata-ops.sh
 Local OpenMetadata URL: http://127.0.0.1:8585
 Backup directory: ./backups
 Log directory: ./logs
+```
+
+When installed through `install.sh`, `om-auth` instead keeps backups and logs under:
+
+```text
+~/.local/share/openmetadata-auth-toolkit/backups
+~/.local/share/openmetadata-auth-toolkit/logs
 ```
 
 Override them when needed:
@@ -211,6 +242,22 @@ Exit codes:
 ## Microsoft Entra setup
 
 See [docs/entra-setup.md](docs/entra-setup.md) for the application registration and redirect URI requirements.
+
+## Validation status
+
+The pre-release v0.1.0 foundation has been exercised on OpenMetadata 2.0.3 with Docker Compose through this round trip:
+
+```text
+Basic authentication
+→ backup
+→ configure Microsoft Entra ID
+→ restart and health verification
+→ real Entra browser login
+→ restore rollback backup
+→ Basic authentication restored
+```
+
+The installer has also been tested from a clean VM snapshot, including Compose auto-detection, PATH setup, `om-auth config`, and `om-auth backup`.
 
 ## Security notes
 
