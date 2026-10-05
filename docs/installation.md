@@ -102,7 +102,7 @@ You can provide the Compose file directly to the installer:
 
 ## One-line installation
 
-The installer supports:
+Once the repository is public, the installer supports:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | bash
