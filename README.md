@@ -4,7 +4,7 @@ Small, dependency-light Bash utilities for safely backing up, configuring, and r
 
 The first release targets **Microsoft Entra ID (OIDC)** on OpenMetadata deployments managed with Docker Compose.
 
-> Status: pre-release. The current foundation has been functionally validated against OpenMetadata 2.0.3 and is undergoing final installation/documentation testing before v0.1.0 is published.
+> **v0.1.0** has been functionally validated against OpenMetadata 2.0.3 with Docker Compose, including backup, Microsoft Entra ID configuration, real browser sign-in, rollback, clean-snapshot installation, and the installed `om-auth` workflow.
 
 ## Why this exists
 
@@ -86,11 +86,13 @@ Common commands:
 | `om-auth help` | Show command usage |
 
 
-To restore a backup:
+To restore a backup listed by `om-auth backups`, you can use just its filename:
 
 ```bash
-om-auth restore ~/.local/share/openmetadata-auth-toolkit/backups/security-config-YYYYMMDD-HHMMSS.yaml
+om-auth restore security-config-YYYYMMDD-HHMMSS.yaml
 ```
+
+Full paths are also accepted.
 
 If the Compose file is not auto-detected, use the fallback `set-compose` command once:
 
@@ -112,7 +114,7 @@ Uninstall the command and installed scripts while preserving backups and logs:
 om-auth uninstall
 ```
 
-Once the repository is public on `main`, the installer is also designed for a one-line install:
+For a one-line install from `main`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | bash
@@ -143,11 +145,6 @@ cd openmetadata-auth-toolkit
 chmod +x backup-security-config.sh configure-entra.sh restore-security-config.sh
 ```
 
-During pre-release testing, switch to the current test branch:
-
-```bash
-git switch emma/v0.1.0-foundation
-```
 
 Then point the toolkit at the OpenMetadata Compose file explicitly:
 
@@ -166,7 +163,6 @@ COMPOSE_FILE=~/openmetadata-docker/docker-compose-postgres.yml \
 ./restore-security-config.sh backups/security-config-YYYYMMDD-HHMMSS.yaml
 ```
 
-Once v0.1.0 is released on `main`, the pre-release branch switch above will no longer be needed.
 
 ## Defaults and overrides
 
@@ -245,7 +241,7 @@ See [docs/entra-setup.md](docs/entra-setup.md) for the application registration 
 
 ## Validation status
 
-The pre-release v0.1.0 foundation has been exercised on OpenMetadata 2.0.3 with Docker Compose through this round trip:
+v0.1.0 has been exercised on OpenMetadata 2.0.3 with Docker Compose through this round trip:
 
 ```text
 Basic authentication
@@ -257,7 +253,7 @@ Basic authentication
 → Basic authentication restored
 ```
 
-The installer has also been tested from a clean VM snapshot, including Compose auto-detection, PATH setup, `om-auth config`, and `om-auth backup`.
+The installer has also been tested from a clean VM snapshot, including Compose auto-detection, PATH setup, `om-auth config`, `om-auth backup`, `om-auth entra`, `om-auth backups`, and `om-auth restore <filename>`.
 
 ## Security notes
 
