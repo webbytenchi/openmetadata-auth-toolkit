@@ -80,6 +80,10 @@ sudo docker compose -f "$COMPOSE_FILE" cp "$SERVICE:$remote" "$backup" >/dev/nul
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
+# docker compose cp runs through sudo and may create the destination as root.
+# Return ownership to the user running this script before restricting permissions.
+sudo chown "$(id -u):$(id -g)" "$backup" \
+  || die "$EXIT_APPLY" "Could not set backup ownership on $backup."
 chmod 600 "$backup"
 
 grep -q '^authenticationConfiguration:' "$backup" \
