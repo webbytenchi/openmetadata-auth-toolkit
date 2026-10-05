@@ -20,3 +20,6 @@ jobs:
           bash -n backup-security-config.sh
           bash -n configure-entra.sh
           bash -n restore-security-config.sh
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n om-auth
