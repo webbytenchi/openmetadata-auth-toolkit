@@ -77,7 +77,7 @@ Common commands:
 | --- | --- |
 | `om-auth backup` | Export and verify the current persisted security configuration |
 | `om-auth entra` | Configure Microsoft Entra ID with an automatic rollback backup |
-| `om-auth restore <backup.yaml>` | Restore a previous authentication/authorization backup |
+| `om-auth restore <backup.yaml>` | Restore a previous backup by filename from the toolkit backup directory, or by full path |
 | `om-auth backups` | List saved backups |
 | `om-auth logs` | List saved per-run logs |
 | `om-auth config` | Show Compose, install, backup, and log paths |
