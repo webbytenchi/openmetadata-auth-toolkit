@@ -11,10 +11,21 @@ SERVICE="${OM_SERVICE:-openmetadata-server}"
 OPS_PATH="${OM_OPS_PATH:-/opt/openmetadata/bootstrap/openmetadata-ops.sh}"
 BACKUP_DIR="${OM_BACKUP_DIR:-./backups}"
 QUIET=0
+LOG_FILE=""
 
 log() { [[ "$QUIET" -eq 1 ]] || printf '%s\n' "$*"; }
 die() { local code="$1"; shift; printf 'ERROR: %s\n' "$*" >&2; exit "$code"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "Required command '$1' was not found."; }
+
+show_failure() {
+  local code="$1" message="$2"
+  printf 'ERROR: %s\n' "$message" >&2
+  if [[ -n "$LOG_FILE" && -s "$LOG_FILE" ]]; then
+    printf '\nDetails:\n' >&2
+    cat "$LOG_FILE" >&2
+  fi
+  exit "$code"
+}
 
 detect_compose() {
   if [[ -n "${COMPOSE_FILE:-}" ]]; then
@@ -36,20 +47,20 @@ detect_compose() {
 preflight() {
   [[ -n "${BASH_VERSION:-}" ]] || die "$EXIT_MISSING_DEP" "This script requires Bash."
   local c
-  for c in sudo docker grep date mkdir chmod rm; do need "$c"; done
+  for c in sudo docker grep date mkdir chmod rm mktemp cat id chown; do need "$c"; done
 
-  sudo -v || die "$EXIT_MISSING_DEP" "sudo authentication failed."
+  sudo -v >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "sudo authentication failed."
   docker compose version >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "'docker compose' is unavailable."
 
   detect_compose
 
-  sudo docker compose -f "$COMPOSE_FILE" config --services | grep -Fxq "$SERVICE" \
+  sudo docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null | grep -Fxq "$SERVICE" \
     || die "$EXIT_INVALID_INPUT" "Compose service '$SERVICE' was not found in $COMPOSE_FILE."
 
-  sudo docker compose -f "$COMPOSE_FILE" ps --services --status running | grep -Fxq "$SERVICE" \
+  sudo docker compose -f "$COMPOSE_FILE" ps --services --status running 2>/dev/null | grep -Fxq "$SERVICE" \
     || die "$EXIT_INVALID_INPUT" "Compose service '$SERVICE' is not running."
 
-  sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" test -x "$OPS_PATH" \
+  sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" test -x "$OPS_PATH" >/dev/null 2>&1 \
     || die "$EXIT_INVALID_INPUT" "OpenMetadata operations tool not found or not executable at $OPS_PATH."
 }
 
@@ -65,35 +76,45 @@ preflight
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
+LOG_FILE="$(mktemp)"
+trap 'rm -f "$LOG_FILE"' EXIT
+
 stamp="$(date +%Y%m%d-%H%M%S)"
 remote="/tmp/openmetadata-security-${stamp}-$$.yaml"
 backup="${BACKUP_DIR%/}/security-config-${stamp}.yaml"
 
-log "Exporting current OpenMetadata security configuration..."
+log "[1/3] Exporting security configuration..."
 
-sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
-  "$OPS_PATH" get-security-config --output-file "$remote" >/dev/null \
-  || die "$EXIT_APPLY" "OpenMetadata security configuration export failed."
+if ! sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
+  "$OPS_PATH" get-security-config --output-file "$remote" >"$LOG_FILE" 2>&1; then
+  show_failure "$EXIT_APPLY" "OpenMetadata security configuration export failed."
+fi
+log "[1/3] Exporting security configuration... OK"
 
-sudo docker compose -f "$COMPOSE_FILE" cp "$SERVICE:$remote" "$backup" >/dev/null \
-  || die "$EXIT_APPLY" "Could not copy exported security configuration to $backup."
+: >"$LOG_FILE"
+log "[2/3] Saving backup..."
+if ! sudo docker compose -f "$COMPOSE_FILE" cp "$SERVICE:$remote" "$backup" >"$LOG_FILE" 2>&1; then
+  show_failure "$EXIT_APPLY" "Could not copy exported security configuration to $backup."
+fi
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
-# docker compose cp runs through sudo and may create the destination as root.
-# Return ownership to the user running this script before restricting permissions.
-sudo chown "$(id -u):$(id -g)" "$backup" \
-  || die "$EXIT_APPLY" "Could not set backup ownership on $backup."
+if ! sudo chown "$(id -u):$(id -g)" "$backup" >"$LOG_FILE" 2>&1; then
+  show_failure "$EXIT_APPLY" "Could not set backup ownership on $backup."
+fi
 chmod 600 "$backup"
+log "[2/3] Saving backup... OK"
 
+log "[3/3] Verifying backup..."
 grep -q '^authenticationConfiguration:' "$backup" \
   || die "$EXIT_VERIFY" "Backup is missing authenticationConfiguration."
 grep -q '^authorizerConfiguration:' "$backup" \
   || die "$EXIT_VERIFY" "Backup is missing authorizerConfiguration."
+log "[3/3] Verifying backup... OK"
 
 if [[ "$QUIET" -eq 1 ]]; then
   printf '%s\n' "$backup"
 else
-  log "Backup verified."
-  log "Backup: $backup"
+  printf '\nSUCCESS: Security configuration backup created.\n'
+  printf 'Backup: %s\n' "$backup"
 fi
