@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for c in mkdir chmod cp install printf; do need "$c"; done
+for c in mkdir chmod cp install printf grep touch; do need "$c"; done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
 if [[ -n "$SCRIPT_DIR"    && -f "$SCRIPT_DIR/backup-security-config.sh"    && -f "$SCRIPT_DIR/configure-entra.sh"    && -f "$SCRIPT_DIR/restore-security-config.sh"    && -f "$SCRIPT_DIR/om-auth" ]]; then
@@ -150,9 +150,31 @@ case ":$PATH:" in
     printf '\nTry: om-auth backup\n'
     ;;
   *)
-    printf '\nNOTE: %s is not currently in PATH.\n' "$BIN_HOME"
-    printf 'Run now: %s/om-auth backup\n' "$BIN_HOME"
-    printf 'Or add this to your shell profile: export PATH="%s:$PATH"\n' "$BIN_HOME"
+    PROFILE=""
+    if [[ -n "${BASH_VERSION:-}" ]]; then
+      PROFILE="$HOME/.bashrc"
+    elif [[ -n "${ZSH_VERSION:-}" ]]; then
+      PROFILE="$HOME/.zshrc"
+    fi
+
+    if [[ -n "$PROFILE" ]]; then
+      touch "$PROFILE"
+      PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+      if ! grep -Fqx "$PATH_LINE" "$PROFILE"; then
+        {
+          printf '\n# OpenMetadata Auth Toolkit\n'
+          printf '%s\n' "$PATH_LINE"
+        } >> "$PROFILE"
+      fi
+
+      printf '\nAdded %s to PATH in %s.\n' "$BIN_HOME" "$PROFILE"
+      printf 'For this shell, run: source %s\n' "$PROFILE"
+      printf 'Then try: om-auth backup\n'
+    else
+      printf '\nNOTE: %s is not currently in PATH.\n' "$BIN_HOME"
+      printf 'Run now: %s/om-auth backup\n' "$BIN_HOME"
+      printf 'Or add this to your shell profile: export PATH="%s:$PATH"\n' "$BIN_HOME"
+    fi
     ;;
 esac
 
