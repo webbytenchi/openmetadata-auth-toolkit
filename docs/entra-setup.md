@@ -1,6 +1,6 @@
 # Microsoft Entra ID setup
 
-This page covers the Microsoft Entra side required by `configure-entra.sh`.
+This page covers the Microsoft Entra side required by `om-auth entra` (the installed wrapper around `configure-entra.sh`).
 
 ## 1. Create an app registration
 
@@ -15,7 +15,7 @@ Record:
 - Directory (tenant) ID
 - Application (client) ID
 
-The toolkit asks for both values interactively.
+The toolkit asks for both values interactively when you run `om-auth entra`.
 
 ## 2. Add the OpenMetadata redirect URI
 
@@ -81,7 +81,7 @@ OpenMetadata may need a refresh token after the initial authorization-code excha
 
 ## 6. Test in a private browser session
 
-After the script reports success, open the public OpenMetadata URL in an incognito/private browser window and verify that the Microsoft sign-in flow completes.
+After `om-auth entra` reports success, open the public OpenMetadata URL in an incognito/private browser window and verify that the Microsoft sign-in flow completes.
 
 Do not remove the rollback backup until you have tested a fresh sign-in.
 
@@ -114,5 +114,5 @@ openid email profile offline_access
 Restore the pre-change backup:
 
 ```bash
-./restore-security-config.sh backups/security-config-YYYYMMDD-HHMMSS.yaml
+om-auth restore ~/.local/share/openmetadata-auth-toolkit/backups/security-config-YYYYMMDD-HHMMSS.yaml
 ```
