@@ -10,6 +10,7 @@ EXIT_VERIFY=5
 SERVICE="${OM_SERVICE:-openmetadata-server}"
 OPS_PATH="${OM_OPS_PATH:-/opt/openmetadata/bootstrap/openmetadata-ops.sh}"
 LOCAL_URL="${OM_LOCAL_URL:-http://127.0.0.1:8585}"
+LOG_DIR="${OM_LOG_DIR:-./logs}"
 LOG_FILE=""
 
 die() { local code="$1"; shift; printf 'ERROR: %s\n' "$*" >&2; exit "$code"; }
@@ -18,10 +19,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "Required co
 show_failure() {
   local code="$1" message="$2"
   printf 'ERROR: %s\n' "$message" >&2
-  if [[ -n "$LOG_FILE" && -s "$LOG_FILE" ]]; then
-    printf '\nDetails:\n' >&2
-    cat "$LOG_FILE" >&2
-  fi
+  [[ -n "$LOG_FILE" ]] && printf 'Log: %s\n' "$LOG_FILE" >&2
   exit "$code"
 }
 
@@ -80,6 +78,13 @@ printf '[1/5] Preflight checks... '
 preflight
 printf 'OK\n'
 
+mkdir -p "$LOG_DIR"
+chmod 700 "$LOG_DIR"
+run_stamp="$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="${LOG_DIR%/}/restore-security-config-${run_stamp}.log"
+: >"$LOG_FILE"
+chmod 600 "$LOG_FILE"
+
 grep -q '^authenticationConfiguration:' "$backup" \
   || die "$EXIT_VERIFY" "Backup is missing authenticationConfiguration."
 grep -q '^authorizerConfiguration:' "$backup" \
@@ -93,21 +98,20 @@ printf '\nThis replaces the current OpenMetadata authentication and authorizatio
 read -r -p "Type RESTORE to continue: " answer
 [[ "$answer" == "RESTORE" ]] || { printf 'Cancelled.\n'; exit 0; }
 
-LOG_FILE="$(mktemp)"
-trap 'rm -f "$LOG_FILE"' EXIT
 remote="/tmp/restore-security-$(basename "$backup")"
 
 printf '[2/5] Copying backup into OpenMetadata... '
-if ! sudo docker compose -f "$COMPOSE_FILE" cp "$backup" "$SERVICE:$remote" >"$LOG_FILE" 2>&1; then
+printf '%s\n' '=== Copy backup into OpenMetadata ===' >>"$LOG_FILE"
+if ! sudo docker compose -f "$COMPOSE_FILE" cp "$backup" "$SERVICE:$remote" >>"$LOG_FILE" 2>&1; then
   printf 'FAILED\n'
   show_failure "$EXIT_APPLY" "Could not copy backup into the OpenMetadata container."
 fi
 printf 'OK\n'
 
-: >"$LOG_FILE"
+printf '%s\n' '=== Apply restored security configuration ===' >>"$LOG_FILE"
 printf '[3/5] Applying security configuration... '
 if ! { printf 'CONFIRM\n' | sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
-  "$OPS_PATH" update-security-config --config-file "$remote"; } >"$LOG_FILE" 2>&1; then
+  "$OPS_PATH" update-security-config --config-file "$remote"; } >>"$LOG_FILE" 2>&1; then
   printf 'FAILED\n'
   show_failure "$EXIT_APPLY" "OpenMetadata rejected the backup configuration."
 fi
@@ -115,9 +119,9 @@ printf 'OK\n'
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
-: >"$LOG_FILE"
+printf '%s\n' '=== Restart OpenMetadata ===' >>"$LOG_FILE"
 printf '[4/5] Restarting OpenMetadata... '
-if ! sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >"$LOG_FILE" 2>&1; then
+if ! sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >>"$LOG_FILE" 2>&1; then
   printf 'FAILED\n'
   show_failure "$EXIT_APPLY" "Failed to restart '$SERVICE'."
 fi
@@ -138,3 +142,4 @@ printf 'OK\n'
 
 printf '\nSUCCESS: Security configuration restored.\n'
 printf 'Active provider: %s\n' "$actual"
+printf 'Log: %s\n' "$LOG_FILE"
