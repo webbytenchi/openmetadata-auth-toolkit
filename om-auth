@@ -75,7 +75,11 @@ case "$cmd" in
   restore)
     need_compose
     [[ $# -eq 1 ]] || { printf 'Usage: om-auth restore <backup.yaml>\n' >&2; exit 3; }
-    COMPOSE_FILE="$COMPOSE_FILE" OM_BACKUP_DIR="$BACKUP_DIR" OM_LOG_DIR="$LOG_DIR"       "$INSTALL_DIR/restore-security-config.sh" "$1"
+    backup_arg="$1"
+    if [[ ! -f "$backup_arg" && -f "$BACKUP_DIR/$backup_arg" ]]; then
+      backup_arg="$BACKUP_DIR/$backup_arg"
+    fi
+    COMPOSE_FILE="$COMPOSE_FILE" OM_BACKUP_DIR="$BACKUP_DIR" OM_LOG_DIR="$LOG_DIR"       "$INSTALL_DIR/restore-security-config.sh" "$backup_arg"
     ;;
   backups)
     mkdir -p "$BACKUP_DIR"
