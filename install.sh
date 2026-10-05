@@ -63,7 +63,7 @@ else
   RAW_BASE="https://raw.githubusercontent.com/$REPO/$REF"
 
   printf 'Downloading OpenMetadata Auth Toolkit...\n'
-  for file in backup-security-config.sh configure-entra.sh restore-security-config.sh om-auth; do
+  for file in backup-security-config.sh configure-entra.sh restore-security-config.sh uninstall.sh om-auth; do
     curl -fsSL "$RAW_BASE/$file" -o "$TMP_DIR/$file"       || die "Could not download $file from $REPO ($REF)."
   done
   SOURCE_DIR="$TMP_DIR"
@@ -107,7 +107,7 @@ printf '[1/4] Installing toolkit files... '
 mkdir -p "$INSTALL_DIR" "$BIN_HOME" "$CONFIG_DIR"
 chmod 700 "$INSTALL_DIR" "$CONFIG_DIR"
 
-for file in backup-security-config.sh configure-entra.sh restore-security-config.sh; do
+for file in backup-security-config.sh configure-entra.sh restore-security-config.sh uninstall.sh; do
   install -m 0755 "$SOURCE_DIR/$file" "$INSTALL_DIR/$file"
 done
 install -m 0755 "$SOURCE_DIR/om-auth" "$BIN_HOME/om-auth"
