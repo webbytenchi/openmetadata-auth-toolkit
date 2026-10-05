@@ -42,12 +42,6 @@ cd openmetadata-auth-toolkit
 ./install.sh
 ```
 
-During pre-release testing, switch to the test branch first:
-
-```bash
-git switch emma/v0.1.0-foundation
-./install.sh
-```
 
 The installer will:
 
@@ -108,7 +102,7 @@ You can provide the Compose file directly to the installer:
 
 ## One-line installation
 
-After the repository is public on `main`, the installer is designed to support:
+The installer supports:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | bash
