@@ -10,9 +10,20 @@ EXIT_VERIFY=5
 SERVICE="${OM_SERVICE:-openmetadata-server}"
 OPS_PATH="${OM_OPS_PATH:-/opt/openmetadata/bootstrap/openmetadata-ops.sh}"
 LOCAL_URL="${OM_LOCAL_URL:-http://127.0.0.1:8585}"
+LOG_FILE=""
 
 die() { local code="$1"; shift; printf 'ERROR: %s\n' "$*" >&2; exit "$code"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "Required command '$1' was not found."; }
+
+show_failure() {
+  local code="$1" message="$2"
+  printf 'ERROR: %s\n' "$message" >&2
+  if [[ -n "$LOG_FILE" && -s "$LOG_FILE" ]]; then
+    printf '\nDetails:\n' >&2
+    cat "$LOG_FILE" >&2
+  fi
+  exit "$code"
+}
 
 detect_compose() {
   if [[ -n "${COMPOSE_FILE:-}" ]]; then
@@ -33,20 +44,20 @@ detect_compose() {
 
 preflight() {
   local c
-  for c in sudo docker grep awk curl basename sleep seq head cut; do need "$c"; done
+  for c in sudo docker grep awk curl basename sleep seq head cut mktemp cat rm; do need "$c"; done
 
-  sudo -v || die "$EXIT_MISSING_DEP" "sudo authentication failed."
+  sudo -v >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "sudo authentication failed."
   docker compose version >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "'docker compose' is unavailable."
 
   detect_compose
 
-  sudo docker compose -f "$COMPOSE_FILE" config --services | grep -Fxq "$SERVICE" \
+  sudo docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null | grep -Fxq "$SERVICE" \
     || die "$EXIT_INVALID_INPUT" "Compose service '$SERVICE' was not found."
 
-  sudo docker compose -f "$COMPOSE_FILE" ps --services --status running | grep -Fxq "$SERVICE" \
+  sudo docker compose -f "$COMPOSE_FILE" ps --services --status running 2>/dev/null | grep -Fxq "$SERVICE" \
     || die "$EXIT_INVALID_INPUT" "Compose service '$SERVICE' is not running."
 
-  sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" test -x "$OPS_PATH" \
+  sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" test -x "$OPS_PATH" >/dev/null 2>&1 \
     || die "$EXIT_INVALID_INPUT" "OpenMetadata operations tool not found at $OPS_PATH."
 }
 
@@ -65,7 +76,9 @@ wait_for_health() {
 backup="$1"
 [[ -f "$backup" ]] || die "$EXIT_INVALID_INPUT" "Backup file not found: $backup"
 
+printf '[1/5] Preflight checks... '
 preflight
+printf 'OK\n'
 
 grep -q '^authenticationConfiguration:' "$backup" \
   || die "$EXIT_VERIFY" "Backup is missing authenticationConfiguration."
@@ -74,31 +87,54 @@ grep -q '^authorizerConfiguration:' "$backup" \
 
 provider="$(awk -F': *' '/^  provider:/ {gsub(/"/,"",$2); print $2; exit}' "$backup")"
 
-printf 'Backup: %s\n' "$backup"
+printf '\nBackup: %s\n' "$backup"
 printf 'Authentication provider to restore: %s\n' "${provider:-unknown}"
 printf '\nThis replaces the current OpenMetadata authentication and authorization configuration.\n'
 read -r -p "Type RESTORE to continue: " answer
 [[ "$answer" == "RESTORE" ]] || { printf 'Cancelled.\n'; exit 0; }
 
+LOG_FILE="$(mktemp)"
+trap 'rm -f "$LOG_FILE"' EXIT
 remote="/tmp/restore-security-$(basename "$backup")"
 
-sudo docker compose -f "$COMPOSE_FILE" cp "$backup" "$SERVICE:$remote" >/dev/null \
-  || die "$EXIT_APPLY" "Could not copy backup into the OpenMetadata container."
+printf '[2/5] Copying backup into OpenMetadata... '
+if ! sudo docker compose -f "$COMPOSE_FILE" cp "$backup" "$SERVICE:$remote" >"$LOG_FILE" 2>&1; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_APPLY" "Could not copy backup into the OpenMetadata container."
+fi
+printf 'OK\n'
 
-printf 'CONFIRM\n' | sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
-  "$OPS_PATH" update-security-config --config-file "$remote" \
-  || die "$EXIT_APPLY" "OpenMetadata rejected the backup configuration."
+: >"$LOG_FILE"
+printf '[3/5] Applying security configuration... '
+if ! { printf 'CONFIRM\n' | sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
+  "$OPS_PATH" update-security-config --config-file "$remote"; } >"$LOG_FILE" 2>&1; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_APPLY" "OpenMetadata rejected the backup configuration."
+fi
+printf 'OK\n'
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
-sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >/dev/null \
-  || die "$EXIT_APPLY" "Failed to restart '$SERVICE'."
+: >"$LOG_FILE"
+printf '[4/5] Restarting OpenMetadata... '
+if ! sudo docker compose -f "$COMPOSE_FILE" restart "$SERVICE" >"$LOG_FILE" 2>&1; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_APPLY" "Failed to restart '$SERVICE'."
+fi
+printf 'OK\n'
 
-printf 'Waiting for OpenMetadata to become healthy...\n'
-wait_for_health || die "$EXIT_VERIFY" "OpenMetadata did not become healthy within 90 seconds."
+printf '[5/5] Verifying restored authentication... '
+if ! wait_for_health; then
+  printf 'FAILED\n'
+  show_failure "$EXIT_VERIFY" "OpenMetadata did not become healthy within 90 seconds."
+fi
 
 auth="$(curl -fsS --max-time 10 "$LOCAL_URL/api/v1/system/config/auth")" \
-  || die "$EXIT_VERIFY" "Could not read the authentication configuration after restore."
+  || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Could not read the authentication configuration after restore."; }
 
 actual="$(printf '%s' "$auth" | grep -o '"provider":"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
-printf 'Restore complete. Active provider: %s\n' "${actual:-unknown}"
+[[ -n "$actual" ]] || { printf 'FAILED\n'; die "$EXIT_VERIFY" "Could not determine the active authentication provider."; }
+printf 'OK\n'
+
+printf '\nSUCCESS: Security configuration restored.\n'
+printf 'Active provider: %s\n' "$actual"
