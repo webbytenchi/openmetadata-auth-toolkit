@@ -25,6 +25,7 @@ This toolkit makes that flow repeatable without requiring Python, jq, or a YAML 
 - [Installation guide](docs/installation.md) — prerequisites, installer behavior, PATH setup, Compose auto-detection, installed locations, overrides, and uninstall.
 - [Command reference](docs/command-reference.md) — complete `om-auth` command behavior and examples.
 - [Microsoft Entra ID setup](docs/entra-setup.md) — app registration, redirect URI, client secret, generated OIDC settings, and troubleshooting.
+- [Changelog](CHANGELOG.md) — release history and validated v0.1.0 scope.
 
 ## Runtime requirements
 
