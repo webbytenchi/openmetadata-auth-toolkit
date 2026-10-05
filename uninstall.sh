@@ -13,7 +13,11 @@ read -r -p "Type UNINSTALL to continue: " answer
 [[ "$answer" == "UNINSTALL" ]] || { printf 'Cancelled.\n'; exit 0; }
 
 rm -f "$BIN_HOME/om-auth"
-rm -f   "$INSTALL_DIR/backup-security-config.sh"   "$INSTALL_DIR/configure-entra.sh"   "$INSTALL_DIR/restore-security-config.sh"
+rm -f \
+  "$INSTALL_DIR/backup-security-config.sh" \
+  "$INSTALL_DIR/configure-entra.sh" \
+  "$INSTALL_DIR/restore-security-config.sh" \
+  "$INSTALL_DIR/uninstall.sh"
 rm -rf "$CONFIG_DIR"
 
 printf 'OpenMetadata Auth Toolkit uninstalled.\n'
