@@ -27,6 +27,7 @@ Usage:
   om-auth logs
   om-auth set-compose <compose.yml>
   om-auth config
+  om-auth uninstall
   om-auth help
 EOF
 }
@@ -93,6 +94,9 @@ case "$cmd" in
     printf 'Install: %s\n' "$INSTALL_DIR"
     printf 'Backups: %s\n' "$BACKUP_DIR"
     printf 'Logs: %s\n' "$LOG_DIR"
+    ;;
+  uninstall)
+    "$INSTALL_DIR/uninstall.sh"
     ;;
   help|-h|--help)
     usage
