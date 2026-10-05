@@ -115,7 +115,7 @@ Uninstall the command and installed scripts while preserving backups and logs:
 om-auth uninstall
 ```
 
-For a one-line install from `main`:
+Once the repository is public, a one-line install from `main` is available:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | bash
