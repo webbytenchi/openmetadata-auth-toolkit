@@ -10,6 +10,7 @@ EXIT_VERIFY=5
 SERVICE="${OM_SERVICE:-openmetadata-server}"
 OPS_PATH="${OM_OPS_PATH:-/opt/openmetadata/bootstrap/openmetadata-ops.sh}"
 BACKUP_DIR="${OM_BACKUP_DIR:-./backups}"
+LOG_DIR="${OM_LOG_DIR:-./logs}"
 QUIET=0
 LOG_FILE=""
 
@@ -20,10 +21,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$EXIT_MISSING_DEP" "Required co
 show_failure() {
   local code="$1" message="$2"
   printf 'ERROR: %s\n' "$message" >&2
-  if [[ -n "$LOG_FILE" && -s "$LOG_FILE" ]]; then
-    printf '\nDetails:\n' >&2
-    cat "$LOG_FILE" >&2
-  fi
+  [[ -n "$LOG_FILE" ]] && printf 'Log: %s\n' "$LOG_FILE" >&2
   exit "$code"
 }
 
@@ -73,33 +71,34 @@ fi
 
 preflight
 
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
-
-LOG_FILE="$(mktemp)"
-trap 'rm -f "$LOG_FILE"' EXIT
+mkdir -p "$BACKUP_DIR" "$LOG_DIR"
+chmod 700 "$BACKUP_DIR" "$LOG_DIR"
 
 stamp="$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="${LOG_DIR%/}/backup-security-config-${stamp}.log"
+: >"$LOG_FILE"
+chmod 600 "$LOG_FILE"
 remote="/tmp/openmetadata-security-${stamp}-$$.yaml"
 backup="${BACKUP_DIR%/}/security-config-${stamp}.yaml"
 
 log "[1/3] Exporting security configuration..."
 
+printf '%s\n' '=== Export security configuration ===' >>"$LOG_FILE"
 if ! sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" \
-  "$OPS_PATH" get-security-config --output-file "$remote" >"$LOG_FILE" 2>&1; then
+  "$OPS_PATH" get-security-config --output-file "$remote" >>"$LOG_FILE" 2>&1; then
   show_failure "$EXIT_APPLY" "OpenMetadata security configuration export failed."
 fi
 log "[1/3] Exporting security configuration... OK"
 
-: >"$LOG_FILE"
+printf '%s\n' '=== Copy exported configuration ===' >>"$LOG_FILE"
 log "[2/3] Saving backup..."
-if ! sudo docker compose -f "$COMPOSE_FILE" cp "$SERVICE:$remote" "$backup" >"$LOG_FILE" 2>&1; then
+if ! sudo docker compose -f "$COMPOSE_FILE" cp "$SERVICE:$remote" "$backup" >>"$LOG_FILE" 2>&1; then
   show_failure "$EXIT_APPLY" "Could not copy exported security configuration to $backup."
 fi
 
 sudo docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" rm -f "$remote" >/dev/null 2>&1 || true
 
-if ! sudo chown "$(id -u):$(id -g)" "$backup" >"$LOG_FILE" 2>&1; then
+if ! sudo chown "$(id -u):$(id -g)" "$backup" >>"$LOG_FILE" 2>&1; then
   show_failure "$EXIT_APPLY" "Could not set backup ownership on $backup."
 fi
 chmod 600 "$backup"
@@ -117,4 +116,5 @@ if [[ "$QUIET" -eq 1 ]]; then
 else
   printf '\nSUCCESS: Security configuration backup created.\n'
   printf 'Backup: %s\n' "$backup"
+  printf 'Log: %s\n' "$LOG_FILE"
 fi
