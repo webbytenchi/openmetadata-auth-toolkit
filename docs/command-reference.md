@@ -96,7 +96,7 @@ The command:
 6. waits for health
 7. reports the active provider
 
-Use the rollback backup created by `om-auth entra` if an Entra change needs to be reversed.
+Use the rollback backup created by `om-auth entra` if an Entra change needs to be reversed. If you pass only a filename, `om-auth` automatically looks for it in the configured backup directory. Full paths are also accepted.
 
 ## `om-auth backups`
 
