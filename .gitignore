@@ -3,3 +3,4 @@ backups/
 security-config-*.yaml
 *.local
 *.log
+logs/\n
