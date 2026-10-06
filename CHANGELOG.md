@@ -2,6 +2,18 @@
 
 All notable changes to OpenMetadata Auth Toolkit are documented here.
 
+## v0.1.1 — 2026-10-06
+
+Public-release hardening release.
+
+### Security and installation hardening
+
+- Pin the public one-line installer to the `v0.1.1` release by default instead of mutable `main`.
+- Keep alternate installer refs available through the explicit `OM_AUTH_TOOLKIT_REF` override.
+- Escape user-supplied public URL values before inserting them into generated YAML.
+- Add a public security policy with vulnerability-reporting and sensitive-data guidance.
+- Re-audit the repository for credentials, private infrastructure details, and sensitive generated outputs before release.
+
 ## v0.1.0 — 2026-10-06
 
 Initial release.
