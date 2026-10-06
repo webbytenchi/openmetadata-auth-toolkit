@@ -92,6 +92,7 @@ printf '%s\n' '---------------------------------------------'
 
 read -r -p "Public OpenMetadata URL (for example https://metadata.example.com): " PUBLIC_URL
 PUBLIC_URL="${PUBLIC_URL%/}"
+PUBLIC_URL_YAML="$(yaml_escape "$PUBLIC_URL")"
 [[ "$PUBLIC_URL" =~ ^https://[^[:space:]]+$ ]] \
   || die "$EXIT_INVALID_INPUT" "Public URL must be an https:// URL without spaces."
 
@@ -130,7 +131,9 @@ chmod 600 "$tmp" "$secret_tmp"
 printf '%s' "$(yaml_escape "$CLIENT_SECRET")" > "$secret_tmp"
 unset CLIENT_SECRET
 
-export PUBLIC_URL TENANT_ID CLIENT_ID CALLBACK_URL DISCOVERY_URI AUTHORITY JWKS_URL SELF_JWKS SECRET_FILE="$secret_tmp"
+CALLBACK_URL_YAML="$(yaml_escape "$CALLBACK_URL")"
+SELF_JWKS_YAML="$(yaml_escape "$SELF_JWKS")"
+export PUBLIC_URL_YAML CALLBACK_URL_YAML SELF_JWKS_YAML TENANT_ID CLIENT_ID DISCOVERY_URI AUTHORITY JWKS_URL SECRET_FILE="$secret_tmp"
 
 awk '
 BEGIN {
@@ -155,8 +158,8 @@ function emit_oidc() {
   print "    tokenValidity: 3600"
   print "    customParams: {}"
   print "    tenant: \"" ENVIRON["TENANT_ID"] "\""
-  print "    serverUrl: \"" ENVIRON["PUBLIC_URL"] "\""
-  print "    callbackUrl: \"" ENVIRON["CALLBACK_URL"] "\""
+  print "    serverUrl: \"" ENVIRON["PUBLIC_URL_YAML"] "\""
+  print "    callbackUrl: \"" ENVIRON["CALLBACK_URL_YAML"] "\""
   print "    maxAge: \"0\""
   print "    prompt: \"consent\""
   print "    sessionExpiry: 604800"
@@ -181,7 +184,7 @@ function emit_oidc() {
   if ($0 ~ /^  providerName:/) { print "  providerName: \"Azure\""; next }
   if ($0 ~ /^  publicKeyUrls:/) {
     print "  publicKeyUrls:"
-    print "  - \"" ENVIRON["SELF_JWKS"] "\""
+    print "  - \"" ENVIRON["SELF_JWKS_YAML"] "\""
     print "  - \"" ENVIRON["JWKS_URL"] "\""
     skip_pubkeys=1
     next
