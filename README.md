@@ -4,7 +4,7 @@ Small, dependency-light Bash utilities for safely backing up, configuring, and r
 
 The first release targets **Microsoft Entra ID (OIDC)** on OpenMetadata deployments managed with Docker Compose.
 
-> **v0.1.0** has been functionally validated against OpenMetadata 2.0.3 with Docker Compose, including backup, Microsoft Entra ID configuration, real browser sign-in, rollback, clean-snapshot installation, and the installed `om-auth` workflow.
+> **v0.1.1** has been functionally validated against OpenMetadata 2.0.3 with Docker Compose, including backup, Microsoft Entra ID configuration, real browser sign-in, rollback, clean-snapshot installation, and the installed `om-auth` workflow.
 
 
 ## Install and get started
@@ -69,7 +69,8 @@ This toolkit makes that flow repeatable without requiring Python, jq, or a YAML 
 - [Installation guide](docs/installation.md) — prerequisites, installer behavior, PATH setup, Compose auto-detection, installed locations, overrides, and uninstall.
 - [Command reference](docs/command-reference.md) — complete `om-auth` command behavior and examples.
 - [Microsoft Entra ID setup](docs/entra-setup.md) — app registration, redirect URI, client secret, generated OIDC settings, and troubleshooting.
-- [Changelog](CHANGELOG.md) — release history and validated v0.1.0 scope.
+- [Changelog](CHANGELOG.md) — release history and validated v0.1.1 scope.
+- [Security policy](SECURITY.md) — vulnerability reporting and sensitive-data guidance.
 
 ## Runtime requirements
 
@@ -153,16 +154,16 @@ Uninstall the command and installed scripts while preserving backups and logs:
 om-auth uninstall
 ```
 
-Once the repository is public, a one-line install from `main` is available:
+For a reproducible public install, the one-line installer is pinned to the `v0.1.1` release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/v0.1.1/install.sh | bash
 ```
 
 If automatic Compose detection is not possible in a piped install, pass it explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/main/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/webbytenchi/openmetadata-auth-toolkit/v0.1.1/install.sh | \
   bash -s -- --compose-file /path/to/docker-compose.yml
 ```
 
@@ -280,7 +281,7 @@ See [docs/entra-setup.md](docs/entra-setup.md) for the application registration 
 
 ## Validation status
 
-v0.1.0 has been exercised on OpenMetadata 2.0.3 with Docker Compose through this round trip:
+v0.1.1 has been exercised on OpenMetadata 2.0.3 with Docker Compose through this round trip:
 
 ```text
 Basic authentication
