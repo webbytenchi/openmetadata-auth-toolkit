@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="webbytenchi/openmetadata-auth-toolkit"
-REF="${OM_AUTH_TOOLKIT_REF:-main}"
+# Public installs are pinned to the latest release by default. Override only when\n# intentionally testing another ref, e.g. OM_AUTH_TOOLKIT_REF=main.\nREF="${OM_AUTH_TOOLKIT_REF:-v0.1.1}"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 BIN_HOME="${OM_AUTH_BIN_DIR:-$HOME/.local/bin}"
@@ -62,7 +62,7 @@ else
   trap '[[ -n "$TMP_DIR" ]] && rm -rf "$TMP_DIR"' EXIT
   RAW_BASE="https://raw.githubusercontent.com/$REPO/$REF"
 
-  printf 'Downloading OpenMetadata Auth Toolkit...\n'
+  printf 'Downloading OpenMetadata Auth Toolkit (%s)...\n' "$REF"
   for file in backup-security-config.sh configure-entra.sh restore-security-config.sh uninstall.sh om-auth; do
     curl -fsSL "$RAW_BASE/$file" -o "$TMP_DIR/$file"       || die "Could not download $file from $REPO ($REF)."
   done
